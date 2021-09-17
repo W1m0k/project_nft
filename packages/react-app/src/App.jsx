@@ -13,7 +13,7 @@ import StackGrid from "react-stack-grid";
 import Web3Modal from "web3modal";
 import "./App.css";
 import assets from "./assets.js";
-import { Account, Address, AddressInput, Contract, Faucet, GasGauge, Header, Ramp, ThemeSwitch } from "./components";
+import { Account, Address, AddressInput, Contract, Header, ThemeSwitch } from "./components";
 import { DAI_ABI, DAI_ADDRESS, INFURA_ID, NETWORK, NETWORKS } from "./constants";
 import { Transactor } from "./helpers";
 import {
@@ -160,9 +160,6 @@ function App(props) {
   // The transactor wraps transactions and provides notificiations
   const tx = Transactor(userProvider, gasPrice);
 
-  // Faucet Tx can be used to send funds from the faucet
-  const faucetTx = Transactor(localProvider, gasPrice);
-
   // 🏗 scaffold-eth is full of handy hooks like this one to get your balance:
   const yourLocalBalance = useBalance(localProvider, address);
 
@@ -191,11 +188,11 @@ function App(props) {
   ]);
 
   // keep track of a variable from the contract in the local React state:
-  const balance = useContractReader(readContracts, "YourCollectible", "balanceOf", [address]);
+  const balance = useContractReader(readContracts, "RoomPets", "balanceOf", [address]);
   console.log("🤗 balance:", balance);
 
   // 📟 Listen for broadcast events
-  const transferEvents = useEventListener(readContracts, "YourCollectible", "Transfer", localProvider, 1);
+  const transferEvents = useEventListener(readContracts, "RoomPets", "Transfer", localProvider, 1);
   console.log("📟 Transfer events:", transferEvents);
 
   //
@@ -210,9 +207,9 @@ function App(props) {
       for (let tokenIndex = 0; tokenIndex < balance; tokenIndex++) {
         try {
           console.log("GEtting token index", tokenIndex);
-          const tokenId = await readContracts.YourCollectible.tokenOfOwnerByIndex(address, tokenIndex);
+          const tokenId = await readContracts.RoomPets.tokenOfOwnerByIndex(address, tokenIndex);
           console.log("tokenId", tokenId);
-          const tokenURI = await readContracts.YourCollectible.tokenURI(tokenId);
+          const tokenURI = await readContracts.RoomPets.tokenURI(tokenId);
           console.log("tokenURI", tokenURI);
 
           const ipfsHash = tokenURI.replace("https://ipfs.io/ipfs/", "");
@@ -340,36 +337,6 @@ function App(props) {
     setRoute(window.location.pathname);
   }, [setRoute]);
 
-  let faucetHint = "";
-  const faucetAvailable = localProvider && localProvider.connection && targetNetwork.name === "localhost";
-
-  const [faucetClicked, setFaucetClicked] = useState(false);
-  if (
-    !faucetClicked &&
-    localProvider &&
-    localProvider._network &&
-    localProvider._network.chainId === 31337 &&
-    yourLocalBalance &&
-    formatEther(yourLocalBalance) <= 0
-  ) {
-    faucetHint = (
-      <div style={{ padding: 16 }}>
-        <Button
-          type="primary"
-          onClick={() => {
-            faucetTx({
-              to: address,
-              value: parseEther("0.01"),
-            });
-            setFaucetClicked(true);
-          }}
-        >
-          💰 Grab funds from the faucet ⛽️
-        </Button>
-      </div>
-    );
-  }
-
   const [yourJSON, setYourJSON] = useState(STARTING_JSON);
   const [sending, setSending] = useState();
   const [ipfsHash, setIpfsHash] = useState();
@@ -386,11 +353,11 @@ function App(props) {
       const assetUpdate = [];
       for (const a in assets) {
         try {
-          const forSale = await readContracts.YourCollectible.forSale(utils.id(a));
+          const forSale = await readContracts.RoomPets.forSale(utils.id(a));
           let owner;
           if (!forSale) {
-            const tokenId = await readContracts.YourCollectible.uriToTokenId(utils.id(a));
-            owner = await readContracts.YourCollectible.ownerOf(tokenId);
+            const tokenId = await readContracts.RoomPets.uriToTokenId(utils.id(a));
+            owner = await readContracts.RoomPets.ownerOf(tokenId);
           }
           assetUpdate.push({ id: a, ...assets[a], forSale, owner });
         } catch (e) {
@@ -399,7 +366,7 @@ function App(props) {
       }
       setLoadedAssets(assetUpdate);
     };
-    if (readContracts && readContracts.YourCollectible) updateYourCollectibles();
+    if (readContracts && readContracts.RoomPets) updateYourCollectibles();
   }, [assets, readContracts, transferEvents]);
 
   const galleryList = [];
@@ -413,7 +380,7 @@ function App(props) {
           <Button
             onClick={() => {
               console.log("gasPrice,", gasPrice);
-              tx(writeContracts.YourCollectible.mintItem(loadedAssets[a].id, { gasPrice }));
+              tx(writeContracts.RoomPets.mintItem(loadedAssets[a].id, { gasPrice }));
             }}
           >
             Mint
@@ -587,7 +554,7 @@ function App(props) {
                         <Button
                           onClick={() => {
                             console.log("writeContracts", writeContracts);
-                            tx(writeContracts.YourCollectible.transferFrom(address, transferToAddresses[id], id));
+                            tx(writeContracts.RoomPets.transferFrom(address, transferToAddresses[id], id));
                           }}
                         >
                           Transfer
@@ -694,7 +661,7 @@ function App(props) {
           </Route>
           <Route path="/debugcontracts">
             <Contract
-              name="YourCollectible"
+              name="RoomPets"
               signer={userProvider.getSigner()}
               provider={localProvider}
               address={address}
@@ -719,47 +686,7 @@ function App(props) {
           logoutOfWeb3Modal={logoutOfWeb3Modal}
           blockExplorer={blockExplorer}
         />
-        {faucetHint}
-      </div>
-
-      {/* 🗺 Extra UI like gas price, eth price, faucet, and support: */}
-      <div style={{ position: "fixed", textAlign: "left", left: 0, bottom: 20, padding: 10 }}>
-        <Row align="middle" gutter={[4, 4]}>
-          <Col span={8}>
-            <Ramp price={price} address={address} networks={NETWORKS} />
-          </Col>
-
-          <Col span={8} style={{ textAlign: "center", opacity: 0.8 }}>
-            <GasGauge gasPrice={gasPrice} />
-          </Col>
-          <Col span={8} style={{ textAlign: "center", opacity: 1 }}>
-            <Button
-              onClick={() => {
-                window.open("https://t.me/joinchat/KByvmRe5wkR-8F_zz6AjpA");
-              }}
-              size="large"
-              shape="round"
-            >
-              <span style={{ marginRight: 8 }} role="img" aria-label="support">
-                💬
-              </span>
-              Support
-            </Button>
-          </Col>
-        </Row>
-
-        <Row align="middle" gutter={[4, 4]}>
-          <Col span={24}>
-            {
-              /*  if the local provider has a signer, let's show the faucet:  */
-              faucetAvailable ? (
-                <Faucet localProvider={localProvider} price={price} ensProvider={mainnetProvider} />
-              ) : (
-                ""
-              )
-            }
-          </Col>
-        </Row>
+        {/* {faucetHint} */}
       </div>
     </div>
   );

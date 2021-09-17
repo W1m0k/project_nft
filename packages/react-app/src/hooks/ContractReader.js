@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import useOnBlock from "./OnBlock";
 import usePoller from "./Poller";
 
-const DEBUG = false;
+const DEBUG = true;
 
 /*
   ~ What it does? ~

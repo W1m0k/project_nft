@@ -3,11 +3,11 @@ schema:
   file: ./src/schema.graphql
 dataSources:
   - kind: ethereum/contract
-    name: YourContract
+    name: RoomPets
     network: localhost
     source:
       address: '{{YourContractAddress}}'
-      abi: YourContract
+      abi: RoomPets
       startBlock: 1
     mapping:
       kind: ethereum/events
@@ -17,8 +17,8 @@ dataSources:
         - Purpose
         - Sender
       abis:
-        - name: YourContract
-          file: ./abis/YourContract.json
+        - name: RoomPets
+          file: ./abis/RoomPets.json
       eventHandlers:
         - event: SetPurpose(address,string)
           handler: handleSetPurpose

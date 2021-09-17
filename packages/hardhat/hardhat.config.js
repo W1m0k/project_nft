@@ -45,6 +45,7 @@ module.exports = {
   networks: {
     localhost: {
       url: "http://localhost:8545",
+      gasPrice: 70000000000,
       //gasPrice: 125000000000,//you can adjust gasPrice locally to see how much it will cost on production 
       /*
         notice no mnemonic here? it will just use account 0 of the hardhat node to deploy
@@ -52,7 +53,7 @@ module.exports = {
       */
     },
     rinkeby: {
-      url: "https://rinkeby.infura.io/v3/460f40a260564ac4a4f4b3fffb032dad", //<---- YOUR INFURA ID! (or it won't work)
+      url: "https://rinkeby.infura.io/v3/f874e207392145f18cf57b6fa1e76869", //<---- YOUR INFURA ID! (or it won't work)
       accounts: {
         mnemonic: mnemonic(),
       },
@@ -99,16 +100,7 @@ module.exports = {
   solidity: {
     compilers: [
       {
-        version: "0.7.6",
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200
-          }
-        }
-      },
-      {
-        version: "0.6.7",
+        version: "0.8.0",
         settings: {
           optimizer: {
             enabled: true,
@@ -126,7 +118,7 @@ module.exports = {
   }
 };
 
-const DEBUG = false;
+const DEBUG = true;
 
 function debug(text) {
   if (DEBUG) {
