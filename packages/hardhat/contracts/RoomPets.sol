@@ -342,10 +342,9 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
     uint256 public constant ETH_PRICE = 0.02 ether;
     uint256 public constant MAX_SUPPLY = 1000;
 
-    address payable private teme_vault1;
-    address payable private teme_vault2;
+    mapping(uint256 => bool) private tokenIdRedemptions;
 
-    string[] private ipfs_hash = [
+    string[] private ipfsHash = [
         "QmSMEAsv8QjFRN36fEUqV5a6NpCLXgfCP6BcCxBj8r58ay", //BalloonCat
         "Qmd1kCaZ7YgwR5yRGmBm3UzD3RgVdz7N695F1tjms22QKH", //FisherCat
         "QmaWfgasrYg9ZJufAH3bdD4KoATMCoMNmkRx9ibs8MDB2X", //MerchantCat
@@ -354,8 +353,13 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
         "QmcvJ8iStjucFDy4wdS8DCTP9LvyB3EZoyeSANSB29G9oN", //BoatCat
         "QmPCKuiCWx9m3T9cPj8Jxy9nXwdNmVcVabK8GyDeckjL7i", //SmileCat
         "QmQdQsvxKo1tzh4o9dTro1Uct9gRH2ASMneqnZZ4XNcpDh", //LunchCat
+        //c1
+        //c2
+        //c3
+        //c4
         "QmcZw78BmsdzF2xe7P3DjtmgjiV2u7h7awZ6bBaPaKpDEP", //FullSetA
         "QmRXmW6rpaeajtYDwgX17D2cwn1Qgo3urje9p76mYvbnAW" //FullSetB
+        //c
     ];
 
     //Change string to byteX if possible
@@ -370,14 +374,7 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
         );
     } */
 
-    constructor() ERC721("Room Cats", "RMCT") {
-        teme_vault1 = payable(
-            address(0xbF44E332E73c299ed6f1FC0113Fb5A742C90bC0f)
-        );
-        teme_vault2 = payable(
-            address(0xF7e3896054E3876E24bf6b178A6C251B68eCdc47)
-        );
-    }
+    constructor() ERC721("Room Cats", "RMCT") {}
 
     ///////
     // MAIN FUNCTIONS
@@ -387,7 +384,12 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
         require(msg.value == ETH_PRICE, "wrong price");
         require(totalSupply() < MAX_SUPPLY, "exceeds maximum supply");
         require(_tokenId < 10000, "token id invalid");
+        require(
+            tokenIdRedemptions[_tokenId] == false,
+            "token already redeemed"
+        );
         _safeMint(_msgSender(), _tokenId);
+        tokenIdRedemptions[_tokenId] = true;
     }
 
     function combine(uint256[4] memory _tokenIds) public {
@@ -396,17 +398,14 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
 
         for (uint256 i = 0; i < 4; i++) {
             require(ownerOf(_tokenIds[i]) == _msgSender(), "not owner");
-            uint256 rand = uint256(
-                keccak256(abi.encodePacked(toString(_tokenIds[i])))
-            );
-            uint256 idx = rand % 8;
+            uint256 rand = uint256(keccak256(abi.encodePacked(_tokenIds[i])));
+            uint256 idx = rand % 8; //12
             if (idx < 4 && count_check == i) {
                 count_check++;
-            } else if (
-                /*idx < 8 && */
-                count_check == (i * 2)
-            ) {
+            } else if (idx < 8 && count_check == (i * 2)) {
                 count_check += 2;
+            } else if (count_check == (i * 3)) {
+                count_check += 3;
             }
             arr_idx[idx] = 1;
 
@@ -423,7 +422,12 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
             (arr_idx[4] + arr_idx[5] + arr_idx[6] + arr_idx[7]) == 4
         ) {
             _safeMint(_msgSender(), 20000 + _tokenIds[0]);
-        }
+        } /* else if (
+            count_check == 12 &&
+            (arr_idx[8] + arr_idx[9] + arr_idx[10] + arr_idx[11]) == 4
+        ) {
+            _safeMint(_msgSender(), 30000 + _tokenIds[0]);
+        } */
     }
 
     /////
@@ -431,27 +435,30 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
     /////
 
     function withdraw() public {
-        uint256 _each = address(this).balance / 2;
-        require(payable(teme_vault1).send(_each));
-        require(payable(teme_vault2).send(_each));
+        uint256 each = address(this).balance / 2;
+        require(
+            payable(address(0xbF44E332E73c299ed6f1FC0113Fb5A742C90bC0f)).send(
+                each
+            )
+        );
+        require(
+            payable(address(0xF7e3896054E3876E24bf6b178A6C251B68eCdc47)).send(
+                each
+            )
+        );
     }
 
     function getHash(uint256 _tokenId) internal view returns (string memory) {
         string memory output;
-        if (_tokenId <= 10000) {
-            uint256 rand = uint256(
-                keccak256(abi.encodePacked(toString(_tokenId)))
-            );
-            output = ipfs_hash[rand % 8];
-        }
-        //> 30000
-        //{}
-        else if (_tokenId > 20000) {
-            // 20001 - 30000
-            output = ipfs_hash[9];
-        } else if (_tokenId > 10000) {
-            //10001 - 20000
-            output = ipfs_hash[8];
+        if (_tokenId < 10000) {
+            uint256 rand = uint256(keccak256(abi.encodePacked(_tokenId)));
+            output = ipfsHash[rand % 8]; //12
+        } else if (_tokenId >= 30000) {
+            //output = ipfsHash[9]; //15
+        } else if (_tokenId >= 20000) {
+            output = ipfsHash[9]; //14
+        } else if (_tokenId >= 10000) {
+            output = ipfsHash[8]; //13
         }
 
         return output;
@@ -467,27 +474,5 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
             abi.encodePacked("https://ipfs.io/ipfs/", getHash(_tokenId))
         );
         return output;
-    }
-
-    function toString(uint256 _value) internal pure returns (string memory) {
-        // Inspired by OraclizeAPI's implementation - MIT license
-        // https://github.com/oraclize/ethereum-api/blob/b42146b063c7d6ee1358846c198246239e9360e8/oraclizeAPI_0.4.25.sol
-
-        if (_value == 0) {
-            return "0";
-        }
-        uint256 temp = _value;
-        uint256 digits;
-        while (temp != 0) {
-            digits++;
-            temp /= 10;
-        }
-        bytes memory buffer = new bytes(digits);
-        while (_value != 0) {
-            digits -= 1;
-            buffer[digits] = bytes1(uint8(48 + uint256(_value % 10)));
-            _value /= 10;
-        }
-        return string(buffer);
     }
 }
