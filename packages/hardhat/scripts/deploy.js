@@ -85,7 +85,18 @@ const main = async () => {
 const deploy = async (contractName, _args = [], overrides = {}, libraries = {}) => {
   console.log(` 🛰  Deploying: ${contractName}`);
 
-  const contractArgs = _args || [];
+  // OpenSea proxy registry addresses for rinkeby and mainnet.
+  let proxyRegistryAddress = "";
+  if (config.defaultNetwork === 'rinkeby') {
+    proxyRegistryAddress = "0xf57b2c51ded3a29e6891aba85459d600256cf317";
+  } else {
+    proxyRegistryAddress = "0xa5409ec958c83c3f309868babaca7c86dcb077c1";
+  }
+
+  console.log(` 🛰  Network: ${config.defaultNetwork}`);
+  console.log(` 🛰  proxy registry addresses: ${proxyRegistryAddress}`);
+
+  const contractArgs = _args.length > 0 ? _args : [proxyRegistryAddress];
   const contractArtifacts = await ethers.getContractFactory(contractName,{libraries: libraries});
   const deployed = await contractArtifacts.deploy(...contractArgs, overrides);
   const encoded = abiEncodeArgs(deployed, contractArgs);

@@ -7,340 +7,19 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-contract Initializable {
-    bool inited = false;
-
-    modifier initializer() {
-        require(!inited, "already inited");
-        _;
-        inited = true;
-    }
-}
-
-contract EIP712Base is Initializable {
-    struct EIP712Domain {
-        string name;
-        string version;
-        address verifyingContract;
-        bytes32 salt;
-    }
-
-    string public constant ERC712_VERSION = "1";
-
-    bytes32 internal constant EIP712_DOMAIN_TYPEHASH =
-        keccak256(
-            bytes(
-                "EIP712Domain(string name,string version,address verifyingContract,bytes32 salt)"
-            )
-        );
-    bytes32 internal domainSeperator;
-
-    // supposed to be called once while initializing.
-    // one of the contracts that inherits this contract follows proxy pattern
-    // so it is not possible to do this in a constructor
-    function _initializeEIP712(string memory name) internal initializer {
-        _setDomainSeperator(name);
-    }
-
-    function _setDomainSeperator(string memory name) internal {
-        domainSeperator = keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPEHASH,
-                keccak256(bytes(name)),
-                keccak256(bytes(ERC712_VERSION)),
-                address(this),
-                bytes32(getChainId())
-            )
-        );
-    }
-
-    function getDomainSeperator() public view returns (bytes32) {
-        return domainSeperator;
-    }
-
-    function getChainId() public view returns (uint256) {
-        uint256 id;
-        assembly {
-            id := chainid()
-        }
-        return id;
-    }
-
-    /**
-     * Accept message hash and returns hash message in EIP712 compatible form
-     * So that it can be used to recover signer from signature signed using EIP712 formatted data
-     * https://eips.ethereum.org/EIPS/eip-712
-     * "\\x19" makes the encoding deterministic
-     * "\\x01" is the version byte to make it compatible to EIP-191
-     */
-    function toTypedMessageHash(bytes32 messageHash)
-        internal
-        view
-        returns (bytes32)
-    {
-        return
-            keccak256(
-                abi.encodePacked("\x19\x01", getDomainSeperator(), messageHash)
-            );
-    }
-}
-
-abstract contract ContextMixin {
-    function msgSender() internal view returns (address payable sender) {
-        if (msg.sender == address(this)) {
-            bytes memory array = msg.data;
-            uint256 index = msg.data.length;
-            assembly {
-                // Load the 32 bytes word from memory with the address on the lower 20 bytes, and mask those.
-                sender := and(
-                    mload(add(array, index)),
-                    0xffffffffffffffffffffffffffffffffffffffff
-                )
-            }
-        } else {
-            sender = payable(msg.sender);
-        }
-        return sender;
-    }
-}
-
-contract NativeMetaTransaction is EIP712Base {
-    using SafeMath for uint256;
-    bytes32 private constant META_TRANSACTION_TYPEHASH =
-        keccak256(
-            bytes(
-                "MetaTransaction(uint256 nonce,address from,bytes functionSignature)"
-            )
-        );
-    event MetaTransactionExecuted(
-        address userAddress,
-        address payable relayerAddress,
-        bytes functionSignature
-    );
-    mapping(address => uint256) nonces;
-
-    /*
-     * Meta transaction structure.
-     * No point of including value field here as if user is doing value transfer then he has the funds to pay for gas
-     * He should call the desired function directly in that case.
-     */
-    struct MetaTransaction {
-        uint256 nonce;
-        address from;
-        bytes functionSignature;
-    }
-
-    function executeMetaTransaction(
-        address userAddress,
-        bytes memory functionSignature,
-        bytes32 sigR,
-        bytes32 sigS,
-        uint8 sigV
-    ) public payable returns (bytes memory) {
-        MetaTransaction memory metaTx = MetaTransaction({
-            nonce: nonces[userAddress],
-            from: userAddress,
-            functionSignature: functionSignature
-        });
-
-        require(
-            verify(userAddress, metaTx, sigR, sigS, sigV),
-            "Signer and signature do not match"
-        );
-
-        // increase nonce for user (to avoid re-use)
-        nonces[userAddress] = nonces[userAddress].add(1);
-
-        emit MetaTransactionExecuted(
-            userAddress,
-            payable(msg.sender),
-            functionSignature
-        );
-
-        // Append userAddress and relayer address at the end to extract it from calling context
-        (bool success, bytes memory returnData) = address(this).call(
-            abi.encodePacked(functionSignature, userAddress)
-        );
-        require(success, "Function call not successful");
-
-        return returnData;
-    }
-
-    function hashMetaTransaction(MetaTransaction memory metaTx)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return
-            keccak256(
-                abi.encode(
-                    META_TRANSACTION_TYPEHASH,
-                    metaTx.nonce,
-                    metaTx.from,
-                    keccak256(metaTx.functionSignature)
-                )
-            );
-    }
-
-    function getNonce(address user) public view returns (uint256 nonce) {
-        nonce = nonces[user];
-    }
-
-    function verify(
-        address signer,
-        MetaTransaction memory metaTx,
-        bytes32 sigR,
-        bytes32 sigS,
-        uint8 sigV
-    ) internal view returns (bool) {
-        require(signer != address(0), "NativeMetaTransaction: INVALID_SIGNER");
-        return
-            signer ==
-            ecrecover(
-                toTypedMessageHash(hashMetaTransaction(metaTx)),
-                sigV,
-                sigR,
-                sigS
-            );
-    }
-}
-
-/**
- * @dev Contract module that helps prevent reentrant calls to a function.
- *
- * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
- * available, which can be applied to functions to make sure there are no nested
- * (reentrant) calls to them.
- *
- * Note that because there is a single `nonReentrant` guard, functions marked as
- * `nonReentrant` may not call one another. This can be worked around by making
- * those functions `private`, and then adding `external` `nonReentrant` entry
- * points to them.
- *
- * TIP: If you would like to learn more about reentrancy and alternative ways
- * to protect against it, check out our blog post
- * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
- */
-abstract contract ReentrancyGuard {
-    // Booleans are more expensive than uint256 or any type that takes up a full
-    // word because each write operation emits an extra SLOAD to first read the
-    // slot's contents, replace the bits taken up by the boolean, and then write
-    // back. This is the compiler's defense against contract upgrades and
-    // pointer aliasing, and it cannot be disabled.
-
-    // The values being non-zero value makes deployment a bit more expensive,
-    // but in exchange the refund on every call to nonReentrant will be lower in
-    // amount. Since refunds are capped to a percentage of the total
-    // transaction's gas, it is best to keep them low in cases like this one, to
-    // increase the likelihood of the full refund coming into effect.
-    uint256 private constant _NOT_ENTERED = 1;
-    uint256 private constant _ENTERED = 2;
-
-    uint256 private _status;
-
-    constructor() {
-        _status = _NOT_ENTERED;
-    }
-
-    /**
-     * @dev Prevents a contract from calling itself, directly or indirectly.
-     * Calling a `nonReentrant` function from another `nonReentrant`
-     * function is not supported. It is possible to prevent this from happening
-     * by making the `nonReentrant` function external, and make it call a
-     * `private` function that does the actual work.
-     */
-    modifier nonReentrant() {
-        // On the first call to nonReentrant, _notEntered will be true
-        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
-
-        // Any calls to nonReentrant after this point will fail
-        _status = _ENTERED;
-
-        _;
-
-        // By storing the original value once again, a refund is triggered (see
-        // https://eips.ethereum.org/EIPS/eip-2200)
-        _status = _NOT_ENTERED;
-    }
-}
-
 contract OwnableDelegateProxy {}
 
 contract ProxyRegistry {
     mapping(address => OwnableDelegateProxy) public proxies;
 }
 
-/**
- * @title ERC721Tradable
- * ERC721Tradable - ERC721 contract that whitelists a trading address, and has minting functionality.
- */
-abstract contract ERC721Tradable is
-    ContextMixin,
-    ERC721Enumerable,
-    NativeMetaTransaction,
-    Ownable
-{
-    using SafeMath for uint256;
-
-    address proxyRegistryAddress;
-    uint256 private _currentTokenId = 0;
-
-    constructor(
-        string memory _name,
-        string memory _symbol,
-        address _proxyRegistryAddress
-    ) ERC721(_name, _symbol) {
-        proxyRegistryAddress = _proxyRegistryAddress;
-        _initializeEIP712(_name);
-    }
-
-    /**
-     * @dev calculates the next token ID based on value of _currentTokenId
-     * @return uint256 for the next token ID
-     */
-    function _getNextTokenId() internal view returns (uint256) {
-        return _currentTokenId.add(1);
-    }
-
-    /**
-     * @dev increments the value of _currentTokenId
-     */
-    function _incrementTokenId() internal {
-        _currentTokenId++;
-    }
-
-    /**
-     * Override isApprovedForAll to whitelist user's OpenSea proxy accounts to enable gas-less listings.
-     */
-    function isApprovedForAll(address owner, address operator)
-        public
-        view
-        override
-        returns (bool)
-    {
-        // Whitelist OpenSea proxy contract for easy trading.
-        ProxyRegistry proxyRegistry = ProxyRegistry(proxyRegistryAddress);
-        if (address(proxyRegistry.proxies(owner)) == operator) {
-            return true;
-        }
-
-        return super.isApprovedForAll(owner, operator);
-    }
-
-    /**
-     * This is used instead of msg.sender as transactions won't be sent by the original token owner, but by OpenSea.
-     */
-    function _msgSender() internal view override returns (address sender) {
-        return ContextMixin.msgSender();
-    }
-}
-
-//contract RoomPets is ERC721Tradable, ReentrancyGuard {
-contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
+contract RoomPets is ERC721Enumerable, Ownable {
     using SafeMath for uint256;
 
     uint256 public constant ETH_PRICE = 0.02 ether;
     uint256 public constant MAX_SUPPLY = 1000;
+
+    address proxyRegistryAddress;
 
     mapping(uint256 => bool) private tokenIdRedemptions;
 
@@ -363,24 +42,34 @@ contract RoomPets is ERC721Enumerable, Ownable, ReentrancyGuard {
     ];
 
     //Change string to byteX if possible
-    /*  constructor(address _proxyRegistryAddress)
-        ERC721Tradable("Room Cats", "RMCT", _proxyRegistryAddress)
-    {
-        teme_vault1 = payable(
-            address(0xbF44E332E73c299ed6f1FC0113Fb5A742C90bC0f)
-        );
-        teme_vault2 = payable(
-            address(0xF7e3896054E3876E24bf6b178A6C251B68eCdc47)
-        );
-    } */
 
-    constructor() ERC721("Room Cats", "RMCT") {}
+    constructor(address _proxyRegistryAddress) ERC721("Room Cats", "RMCT") {
+        proxyRegistryAddress = _proxyRegistryAddress;
+    }
+
+    /**
+     * Override isApprovedForAll to whitelist user's OpenSea proxy accounts to enable gas-less listings.
+     */
+    function isApprovedForAll(address owner, address operator)
+        public
+        view
+        override
+        returns (bool)
+    {
+        // Whitelist OpenSea proxy contract for easy trading.
+        ProxyRegistry proxyRegistry = ProxyRegistry(proxyRegistryAddress);
+        if (address(proxyRegistry.proxies(owner)) == operator) {
+            return true;
+        }
+
+        return super.isApprovedForAll(owner, operator);
+    }
 
     ///////
     // MAIN FUNCTIONS
     //////
 
-    function buy(uint256 _tokenId) public payable nonReentrant {
+    function buy(uint256 _tokenId) public payable {
         require(msg.value == ETH_PRICE, "wrong price");
         require(totalSupply() < MAX_SUPPLY, "exceeds maximum supply");
         require(_tokenId < 10000, "token id invalid");
